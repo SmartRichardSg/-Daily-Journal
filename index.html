@@ -121,7 +121,7 @@ small{color:var(--muted)}
     <div class="prompt">What is one thing you would like to do, improve or focus on tomorrow?</div>
     <textarea id="tomorrow" placeholder="Tomorrow I will..."></textarea>
     <div class="counter"><span id="tomorrowCount">0</span> words</div>
-    <div class="actions"><button class="primary full" id="saveBtn">💾 Save Today's Journal</button></div>
+    <div class="actions"><button class="primary full" id="saveBtn">💾 Save Journal</button><button class="secondary full hidden" id="cancelEditBtn">Cancel Edit</button></div>
     <div class="saved" id="saveMessage"></div>
   </div>
 </section>
@@ -129,7 +129,7 @@ small{color:var(--muted)}
 <section id="historyTab" class="hidden">
   <div class="card">
     <div class="toprow"><h2 style="margin:0">📚 Journal History</h2><span class="badge" id="entryCount">0 entries</span></div>
-    <p class="small">Your entries are stored on this device in this browser.</p>
+    <p class="small">Your entries are stored on this device in this browser. Use <b>Edit</b> to change any saved entry.</p>
     <div id="historyList"></div>
   </div>
 </section>
@@ -193,11 +193,15 @@ function saveToday(){
   const data=currentData();
   const has=Object.values(data).some(v=>v.trim());
   if(!has){alert("Write something first, then save your journal.");return}
-  db.entries[todayKey()]={...data,savedAt:new Date().toISOString()};
-  db.draft={}; saveDB(); document.getElementById("savedStatus").textContent="Saved"; document.getElementById("saveMessage").textContent="✓ Today's journal has been saved.";
+  const key=db.editingDate||todayKey();
+  db.entries[key]={...data,savedAt:new Date().toISOString()};
+  db.draft={}; delete db.editingDate; saveDB();
+  document.getElementById("savedStatus").textContent="Saved";
+  document.getElementById("saveMessage").textContent=key===todayKey()?"✓ Today's journal has been saved.":"✓ Journal entry updated.";
   renderHistory();
 }
 function loadTodayIfSaved(){
+  delete db.editingDate;
   const e=db.entries[todayKey()];
   if(e){fields.forEach(id=>document.getElementById(id).value=e[id]||"");document.getElementById("savedStatus").textContent="Saved"}
   else loadDraft();
@@ -210,7 +214,7 @@ function renderHistory(){
   if(!keys.length){list.innerHTML='<div class="empty">No journal entries yet.</div>';return}
   list.innerHTML=keys.map(k=>{
     const e=db.entries[k], preview=e.mainJournal||e.wentWell||"";
-    return `<div class="entry"><div class="entrydate">${prettyDate(k)}</div><div class="entrypreview">${escapeHtml(preview.slice(0,280))}${preview.length>280?"…":""}</div><div class="actions"><button class="secondary" onclick="viewEntry('${k}')">View</button><button class="danger" onclick="deleteEntry('${k}')">Delete</button></div></div>`
+    return `<div class="entry"><div class="entrydate">${prettyDate(k)}</div><div class="entrypreview">${escapeHtml(preview.slice(0,280))}${preview.length>280?"…":""}</div><div class="actions"><button class="secondary" onclick="viewEntry('${k}')">View</button><button class="primary" onclick="editEntry('${k}')">Edit</button><button class="danger" onclick="deleteEntry('${k}')">Delete</button></div></div>`
   }).join("");
 }
 function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
@@ -218,6 +222,21 @@ window.viewEntry=function(k){
   const e=db.entries[k]; if(!e)return;
   let text=`${prettyDate(k)}\n\nMY DAY\n${e.mainJournal||""}\n\nWHAT WENT WELL\n${e.wentWell||""}\n\nWHAT WAS DIFFICULT\n${e.difficult||""}\n\nWHAT I AM GRATEFUL FOR\n${e.grateful||""}\n\nWHAT I WANT TO REMEMBER\n${e.remember||""}\n\nTOMORROW\n${e.tomorrow||""}`;
   alert(text);
+}
+window.editEntry=function(k){
+  const e=db.entries[k]; if(!e)return;
+  fields.forEach(id=>document.getElementById(id).value=e[id]||"");
+  db.draft={...e}; delete db.draft.savedAt; db.editingDate=k; saveDB();
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelector('.tab[data-tab="today"]').classList.add("active");
+  ["today","history","settings"].forEach(t=>document.getElementById(t+"Tab").classList.toggle("hidden",t!=="today"));
+  document.getElementById("dateBadge").textContent=prettyDate(k);
+  document.getElementById("savedStatus").textContent="Editing "+prettyDate(k);
+  document.getElementById("saveMessage").textContent="Editing an existing entry — save when finished.";
+  document.getElementById("saveBtn").textContent="💾 Save Edited Journal";
+  document.getElementById("cancelEditBtn").classList.remove("hidden");
+  updateCounts();
+  window.scrollTo({top:0,behavior:"smooth"});
 }
 window.deleteEntry=function(k){
   if(confirm("Delete this journal entry? This cannot be undone without a backup.")){delete db.entries[k];saveDB();renderHistory();}
@@ -252,6 +271,13 @@ document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
 });
 fields.forEach(id=>document.getElementById(id).addEventListener("input",()=>{updateCounts();autosaveDraft()}));
 document.getElementById("saveBtn").onclick=saveToday;
+document.getElementById("cancelEditBtn").onclick=()=>{
+  delete db.editingDate; db.draft={}; saveDB(); loadTodayIfSaved();
+  document.getElementById("saveBtn").textContent="💾 Save Today's Journal";
+  document.getElementById("cancelEditBtn").classList.add("hidden");
+  document.getElementById("saveMessage").textContent="";
+};
+
 document.getElementById("unlockBtn").onclick=unlock;
 document.getElementById("unlockPassword").addEventListener("keydown",e=>{if(e.key==="Enter")unlock()});
 document.getElementById("setPasswordBtn").onclick=setPassword;
